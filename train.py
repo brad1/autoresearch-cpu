@@ -470,6 +470,13 @@ FINAL_LR_FRAC = 0.0     # final LR as fraction of initial
 DEPTH = 8               # number of transformer layers
 DEVICE_BATCH_SIZE = 128  # per-device batch size (reduce if OOM)
 
+# CPU runtime profile
+CPU_DEPTH = 4
+CPU_DEVICE_BATCH_SIZE = 2
+CPU_TOTAL_BATCH_SIZE = 2**13
+CPU_EVAL_BATCH_SIZE = 16
+CPU_WINDOW_PATTERN = "L"
+
 # ---------------------------------------------------------------------------
 # Setup: tokenizer, model, optimizer, dataloader
 # ---------------------------------------------------------------------------
@@ -512,8 +519,12 @@ def main():
     use_muon = is_cuda
     use_compile = is_cuda
 
-    effective_total_batch_size = TOTAL_BATCH_SIZE if not is_cpu else min(TOTAL_BATCH_SIZE, 2**15)
-    effective_device_batch_size = DEVICE_BATCH_SIZE if not is_cpu else min(DEVICE_BATCH_SIZE, 8)
+    effective_depth = DEPTH if not is_cpu else min(DEPTH, CPU_DEPTH)
+    effective_window_pattern = WINDOW_PATTERN if not is_cpu else CPU_WINDOW_PATTERN
+    effective_total_batch_size = TOTAL_BATCH_SIZE if not is_cpu else min(TOTAL_BATCH_SIZE, CPU_TOTAL_BATCH_SIZE)
+    effective_device_batch_size = DEVICE_BATCH_SIZE if not is_cpu else min(DEVICE_BATCH_SIZE, CPU_DEVICE_BATCH_SIZE)
+    effective_eval_batch_size = effective_device_batch_size if not is_cpu else max(effective_device_batch_size, CPU_EVAL_BATCH_SIZE)
+    warmup_exempt_steps = 10 if use_compile else 0
 
     tokenizer = Tokenizer.from_directory()
     vocab_size = tokenizer.get_vocab_size()
@@ -527,10 +538,10 @@ def main():
         return GPTConfig(
             sequence_len=MAX_SEQ_LEN, vocab_size=vocab_size,
             n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
-            window_pattern=WINDOW_PATTERN, param_dtype=param_dtype,
+            window_pattern=effective_window_pattern, param_dtype=param_dtype,
         )
 
-    config = build_model_config(DEPTH)
+    config = build_model_config(effective_depth)
     print(f"Model config: {asdict(config)}")
 
     with torch.device("meta"):
@@ -568,6 +579,8 @@ def main():
     print(f"Time budget: {TIME_BUDGET}s")
     print(f"Gradient accumulation steps: {grad_accum_steps}")
     print(f"Effective total batch size: {effective_total_batch_size}")
+    print(f"Eval batch size: {effective_eval_batch_size}")
+    print(f"Warmup-exempt steps: {warmup_exempt_steps}")
 
     def get_lr_multiplier(progress):
         if progress < WARMUP_RATIO:
@@ -624,7 +637,7 @@ def main():
         t1 = time.time()
         dt = t1 - t0
 
-        if step > 10:
+        if step >= warmup_exempt_steps:
             total_training_time += dt
 
         ema_beta = 0.9
@@ -645,7 +658,7 @@ def main():
             gc.collect()
 
         step += 1
-        if step > 10 and total_training_time >= TIME_BUDGET:
+        if step >= warmup_exempt_steps and total_training_time >= TIME_BUDGET:
             break
 
     print()
@@ -654,7 +667,7 @@ def main():
 
     model.eval()
     with autocast_ctx:
-        val_bpb = evaluate_bpb(model, tokenizer, effective_device_batch_size, device=device)
+        val_bpb = evaluate_bpb(model, tokenizer, effective_eval_batch_size, device=device)
 
     t_end = time.time()
     startup_time = t_start_training - t_start
@@ -670,7 +683,7 @@ def main():
     print(f"total_tokens_M:   {total_tokens / 1e6:.1f}")
     print(f"num_steps:        {step}")
     print(f"num_params_M:     {num_params / 1e6:.1f}")
-    print(f"depth:            {DEPTH}")
+    print(f"depth:            {effective_depth}")
 
 
 if __name__ == "__main__":

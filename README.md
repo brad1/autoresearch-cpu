@@ -83,7 +83,7 @@ This code supports both CUDA and CPU backends.
 
 - **Default device selection**: `train.py` auto-detects `cuda` when available, otherwise falls back to `cpu`.
 - **Manual override**: set `DEVICE=cpu` / `DEVICE=cuda` or pass `--device cpu` / `--device cuda`.
-- **CPU behavior**: CPU mode automatically uses conservative tiny training batch defaults so a 5-minute run can still complete.
+- **CPU behavior**: CPU mode automatically switches to a smaller default profile (`DEPTH=4`, `WINDOW_PATTERN="L"`, smaller train batches, larger eval batch) so the run can make progress and still reach validation on slower machines.
 
 CUDA remains strongly recommended for throughput and quality-per-run. CPU mode is intended for accessibility and smoke-testing on smaller machines.
 
