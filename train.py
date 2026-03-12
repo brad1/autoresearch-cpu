@@ -18,7 +18,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from prepare import MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
+from prepare import EVAL_TOKENS, MAX_SEQ_LEN, TIME_BUDGET, Tokenizer, make_dataloader, evaluate_bpb
+
+HAS_FUNCTIONAL_RMS_NORM = hasattr(F, "rms_norm")
 
 # ---------------------------------------------------------------------------
 # GPT Model
@@ -37,7 +39,10 @@ class GPTConfig:
 
 
 def norm(x):
-    return F.rms_norm(x, (x.size(-1),))
+    if HAS_FUNCTIONAL_RMS_NORM:
+        return F.rms_norm(x, (x.size(-1),))
+    eps = torch.finfo(x.dtype).eps
+    return x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + eps)
 
 
 def has_ve(layer_idx, n_layer):
@@ -475,6 +480,7 @@ CPU_DEPTH = 4
 CPU_DEVICE_BATCH_SIZE = 2
 CPU_TOTAL_BATCH_SIZE = 2**13
 CPU_EVAL_BATCH_SIZE = 16
+CPU_EVAL_TOKENS = 524288
 CPU_WINDOW_PATTERN = "L"
 
 # ---------------------------------------------------------------------------
@@ -501,6 +507,10 @@ def maybe_compile(module, enabled):
     return torch.compile(module, dynamic=False) if enabled else module
 
 
+def resolve_eval_tokens(device):
+    return EVAL_TOKENS if device.type != "cpu" else min(EVAL_TOKENS, CPU_EVAL_TOKENS)
+
+
 def main():
     args = parse_args()
     t_start = time.time()
@@ -524,6 +534,7 @@ def main():
     effective_total_batch_size = TOTAL_BATCH_SIZE if not is_cpu else min(TOTAL_BATCH_SIZE, CPU_TOTAL_BATCH_SIZE)
     effective_device_batch_size = DEVICE_BATCH_SIZE if not is_cpu else min(DEVICE_BATCH_SIZE, CPU_DEVICE_BATCH_SIZE)
     effective_eval_batch_size = effective_device_batch_size if not is_cpu else max(effective_device_batch_size, CPU_EVAL_BATCH_SIZE)
+    effective_eval_tokens = resolve_eval_tokens(device)
     warmup_exempt_steps = 10 if use_compile else 0
 
     tokenizer = Tokenizer.from_directory()
@@ -580,6 +591,7 @@ def main():
     print(f"Gradient accumulation steps: {grad_accum_steps}")
     print(f"Effective total batch size: {effective_total_batch_size}")
     print(f"Eval batch size: {effective_eval_batch_size}")
+    print(f"Eval tokens: {effective_eval_tokens:,}")
     print(f"Warmup-exempt steps: {warmup_exempt_steps}")
 
     def get_lr_multiplier(progress):
@@ -667,7 +679,13 @@ def main():
 
     model.eval()
     with autocast_ctx:
-        val_bpb = evaluate_bpb(model, tokenizer, effective_eval_batch_size, device=device)
+        val_bpb = evaluate_bpb(
+            model,
+            tokenizer,
+            effective_eval_batch_size,
+            device=device,
+            eval_tokens=effective_eval_tokens,
+        )
 
     t_end = time.time()
     startup_time = t_start_training - t_start
