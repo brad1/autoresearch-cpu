@@ -354,7 +354,7 @@ def make_dataloader(tokenizer, B, T, split, buffer_size=1000, device=None):
 # ---------------------------------------------------------------------------
 
 @torch.no_grad()
-def evaluate_bpb(model, tokenizer, batch_size, device=None):
+def evaluate_bpb(model, tokenizer, batch_size, device=None, eval_tokens=None):
     """
     Bits per byte (BPB): vocab size-independent evaluation metric.
     Sums per-token cross-entropy (in nats), sums target byte lengths,
@@ -368,7 +368,8 @@ def evaluate_bpb(model, tokenizer, batch_size, device=None):
         device = torch.device(device)
     token_bytes = get_token_bytes(device=device)
     val_loader = make_dataloader(tokenizer, batch_size, MAX_SEQ_LEN, "val", device=device)
-    steps = EVAL_TOKENS // (batch_size * MAX_SEQ_LEN)
+    eval_tokens = EVAL_TOKENS if eval_tokens is None else eval_tokens
+    steps = max(1, eval_tokens // (batch_size * MAX_SEQ_LEN))
     total_nats = 0.0
     total_bytes = 0
     for _ in range(steps):
