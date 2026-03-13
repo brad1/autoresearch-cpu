@@ -101,6 +101,8 @@ CUDA remains strongly recommended for throughput and quality-per-run. CPU mode i
 - The current local CPU profile in `train.py` uses `CPU_DEPTH=3`, `CPU_TOTAL_BATCH_SIZE=2**12`, `CPU_DEVICE_BATCH_SIZE=2`, `CPU_EVAL_BATCH_SIZE=16`, `CPU_EVAL_TOKENS=524288`, and `CPU_WINDOW_PATTERN="L"`.
 - On one local Intel Mac, the best run so far is commit `0e59b77` with `val_bpb=2.405416` and `total_seconds=405.7`.
 - CPU numbers are only directly comparable within this local profile and machine. They are not 1:1 with the default upstream H100-style setup because the CPU path uses a reduced eval budget.
+- A checked-in summary of the local CPU sweep lives in `docs/intel-mac-cpu-results.md`.
+- GitHub Actions now includes `.github/workflows/intel-mac-cpu-smoke.yml`, which runs `uv sync --locked` and `tests.test_train_compat` on `macos-15-intel`.
 - Keep local logs under `results/` and maintain `results.tsv` as a local ignored summary if you want a simple experiment ledger.
 
 If you're going to run on smaller computers (Macbooks, mini PCs, cloud CPU VMs), here are practical tuning suggestions:
