@@ -27,8 +27,8 @@ If you are new to neural networks, this ["Dummy's Guide"](https://x.com/hooeem/s
 # 1. Install uv project manager (if you don't already have it)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install dependencies
-uv sync
+# 2. Install dependencies from the lockfile
+uv sync --locked
 
 # 3. Download data and train tokenizer (one-time, ~2 min)
 uv run prepare.py
@@ -51,6 +51,12 @@ DEVICE=cpu uv run train.py
 uv run train.py --device cpu
 ```
 
+For a quick CPU compatibility smoke test:
+
+```bash
+uv run python -m unittest tests.test_train_compat
+```
+
 
 ## Running the agent
 
@@ -69,6 +75,8 @@ prepare.py      — constants, data prep + runtime utilities (do not modify)
 train.py        — model, optimizer, training loop (agent modifies this)
 program.md      — agent instructions
 pyproject.toml  — dependencies
+results.tsv     — local experiment summary (ignored by git)
+results/        — local logs and run artifacts (ignored by git)
 ```
 
 ## Design choices
@@ -83,9 +91,17 @@ This code supports both CUDA and CPU backends.
 
 - **Default device selection**: `train.py` auto-detects `cuda` when available, otherwise falls back to `cpu`.
 - **Manual override**: set `DEVICE=cpu` / `DEVICE=cuda` or pass `--device cpu` / `--device cuda`.
-- **CPU behavior**: CPU mode automatically switches to a smaller default profile (`DEPTH=4`, `WINDOW_PATTERN="L"`, smaller train batches, larger eval batch) so the run can make progress and still reach validation on slower machines.
+- **CPU behavior**: CPU mode automatically switches to a smaller default profile (`DEPTH=3`, `WINDOW_PATTERN="L"`, smaller train batches, larger eval batch, reduced eval tokens) so the run can make progress and still reach validation on slower machines.
 
 CUDA remains strongly recommended for throughput and quality-per-run. CPU mode is intended for accessibility and smoke-testing on smaller machines.
+
+### Intel Mac (macOS x86_64) notes
+
+- The verified reproducible install path is `uv sync --locked`.
+- The current local CPU profile in `train.py` uses `CPU_DEPTH=3`, `CPU_TOTAL_BATCH_SIZE=2**12`, `CPU_DEVICE_BATCH_SIZE=2`, `CPU_EVAL_BATCH_SIZE=16`, `CPU_EVAL_TOKENS=524288`, and `CPU_WINDOW_PATTERN="L"`.
+- On one local Intel Mac, the best run so far is commit `0e59b77` with `val_bpb=2.405416` and `total_seconds=405.7`.
+- CPU numbers are only directly comparable within this local profile and machine. They are not 1:1 with the default upstream H100-style setup because the CPU path uses a reduced eval budget.
+- Keep local logs under `results/` and maintain `results.tsv` as a local ignored summary if you want a simple experiment ledger.
 
 If you're going to run on smaller computers (Macbooks, mini PCs, cloud CPU VMs), here are practical tuning suggestions:
 

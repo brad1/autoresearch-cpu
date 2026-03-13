@@ -476,7 +476,7 @@ DEPTH = 8               # number of transformer layers
 DEVICE_BATCH_SIZE = 128  # per-device batch size (reduce if OOM)
 
 # CPU runtime profile
-CPU_DEPTH = 2
+CPU_DEPTH = 3
 CPU_DEVICE_BATCH_SIZE = 2
 CPU_TOTAL_BATCH_SIZE = 2**12
 CPU_EVAL_BATCH_SIZE = 16
